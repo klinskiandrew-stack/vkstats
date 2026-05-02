@@ -70,20 +70,45 @@ class VkAdsApi:
         return token[:10] + "..."
 
     def get_agency_clients(self) -> list[dict[str, Any]]:
-        """Возвращает клиентов агентского кабинета.
-
-        В новом VK Ads API используется наследие myTarget API. Для агентств
-        основной справочник клиентов обычно доступен по /agency/clients.json.
-        """
         data = self._get("/agency/clients.json")
         return self._extract_list(data)
 
-    def get_spend_by_clients(self, report_date: date) -> list[ClientSpend]:
-        """Получает расход по клиентам агентства за дату.
+    def get_spend_by_client(self, client_id: int | str, report_date: date) -> ClientSpend:
+        """Получает расход по одному клиенту агентского кабинета за дату."""
+        params = {
+            "date_from": report_date.isoformat(),
+            "date_to": report_date.isoformat(),
+            "metrics": "base",
+            "id": str(client_id),
+        }
+        data = self._get("/statistics/users/day.json", params=params)
+        rows = self._extract_list(data)
 
-        Используется статистика v2 с группировкой users, которая подходит для
-        агентских кабинетов: /statistics/users/day.json.
-        """
+        if not rows and isinstance(data, dict):
+            rows = [data]
+
+        spent = 0.0
+        shows = 0
+        clicks = 0
+        goals = 0
+
+        for row in rows:
+            stats = self._extract_stats(row)
+            spent += self._as_float(self._first_existing(stats, ["spent", "amount", "cost"], 0))
+            shows += int(self._as_float(self._first_existing(stats, ["shows"], 0)))
+            clicks += int(self._as_float(self._first_existing(stats, ["clicks"], 0)))
+            goals += int(self._as_float(self._first_existing(stats, ["goals"], 0)))
+
+        return ClientSpend(
+            client_id=client_id,
+            client_name=f"Клиент {client_id}",
+            spent=spent,
+            shows=shows,
+            clicks=clicks,
+            goals=goals,
+        )
+
+    def get_spend_by_clients(self, report_date: date) -> list[ClientSpend]:
         params = {
             "date_from": report_date.isoformat(),
             "date_to": report_date.isoformat(),
