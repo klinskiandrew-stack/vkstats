@@ -58,14 +58,8 @@ def main() -> None:
         choices=["check-token", "list-clients", "client-spend", "send-report", "send-auto-report"],
         help="Что сделать: проверить токен, вывести клиентов, проверить клиента или отправить отчет",
     )
-    parser.add_argument(
-        "--date",
-        help="Дата отчета в формате YYYY-MM-DD. По умолчанию — вчера по TIMEZONE.",
-    )
-    parser.add_argument(
-        "--client-id",
-        help="ID клиента VK Ads для проверки одного клиента.",
-    )
+    parser.add_argument("--date", help="Дата отчета в формате YYYY-MM-DD. По умолчанию — вчера по TIMEZONE.")
+    parser.add_argument("--client-id", help="ID клиента VK Ads для проверки одного клиента.")
     args = parser.parse_args()
 
     settings = get_settings()
@@ -81,9 +75,8 @@ def main() -> None:
         clients = api.get_agency_clients()
         print(f"Найдено клиентов: {len(clients)}")
         for client in clients:
-            client_id = client.get("id") or client.get("user_id") or client.get("client_id")
-            name = client.get("name") or client.get("username") or client.get("login") or client
-            print(f"{client_id}: {name}")
+            balance = f", баланс: {money(client.balance, settings.currency_symbol)}" if client.balance is not None else ""
+            print(f"{client.client_id}: {client.name} / {client.username} / доступ: {client.access_type}{balance}")
         return
 
     if args.command == "client-spend":
@@ -96,36 +89,23 @@ def main() -> None:
         print(f"Показы: {row.shows}")
         print(f"Клики: {row.clicks}")
         print(f"Цели: {row.goals}")
+        if row.balance is not None:
+            print(f"Баланс: {money(row.balance, settings.currency_symbol)}")
         return
 
     if args.command == "send-report":
         report_date = parse_report_date(args.date, settings.timezone)
         rows = api.get_spend_by_clients_period(report_date, report_date)
-        text = build_report(
-            rows=rows,
-            date_from=report_date,
-            date_to=report_date,
-            period_name="день",
-            currency_symbol=settings.currency_symbol,
-        )
+        text = build_report(rows, report_date, report_date, "день", settings.currency_symbol)
         send_message(settings, text)
         print("Дневной отчет отправлен в Telegram.")
         return
 
     if args.command == "send-auto-report":
         now = datetime.now(ZoneInfo(settings.timezone)).date()
-
         report_date = parse_report_date(args.date, settings.timezone)
         day_rows = api.get_spend_by_clients_period(report_date, report_date)
-        messages = [
-            build_report(
-                rows=day_rows,
-                date_from=report_date,
-                date_to=report_date,
-                period_name="день",
-                currency_symbol=settings.currency_symbol,
-            )
-        ]
+        messages = [build_report(day_rows, report_date, report_date, "день", settings.currency_symbol)]
 
         if now.weekday() == 0:
             current_start, current_end, previous_start, previous_end = week_range_for_report(now)
@@ -133,11 +113,11 @@ def main() -> None:
             previous_rows = api.get_spend_by_clients_period(previous_start, previous_end)
             messages.append(
                 build_report(
-                    rows=current_rows,
-                    date_from=current_start,
-                    date_to=current_end,
-                    period_name="неделя",
-                    currency_symbol=settings.currency_symbol,
+                    current_rows,
+                    current_start,
+                    current_end,
+                    "неделя",
+                    settings.currency_symbol,
                     previous_total=total_spent(previous_rows),
                     previous_label=f"{previous_start.strftime('%d.%m.%Y')}–{previous_end.strftime('%d.%m.%Y')}",
                 )
@@ -149,11 +129,11 @@ def main() -> None:
             previous_rows = api.get_spend_by_clients_period(previous_start, previous_end)
             messages.append(
                 build_report(
-                    rows=current_rows,
-                    date_from=current_start,
-                    date_to=current_end,
-                    period_name="месяц",
-                    currency_symbol=settings.currency_symbol,
+                    current_rows,
+                    current_start,
+                    current_end,
+                    "месяц",
+                    settings.currency_symbol,
                     previous_total=total_spent(previous_rows),
                     previous_label=f"{previous_start.strftime('%d.%m.%Y')}–{previous_end.strftime('%d.%m.%Y')}",
                 )
