@@ -23,8 +23,8 @@ def percent_change(current: float, previous: float) -> str:
 
 def period_title(period_name: str, date_from: date, date_to: date) -> str:
     if date_from == date_to:
-        return f"{period_name} за {date_from.strftime('%d.%m.%Y')}"
-    return f"{period_name} за {date_from.strftime('%d.%m.%Y')}–{date_to.strftime('%d.%m.%Y')}"
+        return f"отчёт за {date_from.strftime('%d.%m.%Y')}"
+    return f"отчёт за {date_from.strftime('%d.%m.%Y')}–{date_to.strftime('%d.%m.%Y')}"
 
 
 def build_report(
@@ -40,7 +40,7 @@ def build_report(
     total_spent = sum(row.spent for row in active_rows)
 
     lines: list[str] = []
-    lines.append(f"📊 VKDailyStat — {period_title(period_name, date_from, date_to)}")
+    lines.append(f"📊 {period_title(period_name, date_from, date_to)}")
     lines.append("")
     lines.append("Итого по агентскому кабинету:")
     lines.append(f"Расход: {money(total_spent, currency_symbol)}")
