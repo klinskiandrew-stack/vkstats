@@ -12,6 +12,7 @@ class Settings:
     vk_ads_agency_client_name: str
     telegram_bot_token: str
     telegram_chat_id: str
+    telegram_proxy_url: str
     timezone: str = "Europe/Moscow"
     api_base_url: str = "https://ads.vk.com/api/v2"
     currency_symbol: str = "₽"
@@ -24,6 +25,7 @@ def get_settings() -> Settings:
         vk_ads_agency_client_name=os.getenv("VK_ADS_AGENCY_CLIENT_NAME", "").strip(),
         telegram_bot_token=os.getenv("TELEGRAM_BOT_TOKEN", "").strip(),
         telegram_chat_id=os.getenv("TELEGRAM_CHAT_ID", "").strip(),
+        telegram_proxy_url=os.getenv("TELEGRAM_PROXY_URL", "").strip(),
         timezone=os.getenv("TIMEZONE", "Europe/Moscow").strip(),
         api_base_url=os.getenv("VK_ADS_API_BASE_URL", "https://ads.vk.com/api/v2").strip().rstrip("/"),
         currency_symbol=os.getenv("CURRENCY_SYMBOL", "₽").strip(),
