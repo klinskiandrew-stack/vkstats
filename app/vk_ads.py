@@ -126,8 +126,12 @@ class VkAdsApi:
             "client_id": self.settings.vk_ads_client_id,
             "client_secret": self.settings.vk_ads_client_secret,
             "access_token": self.get_agency_access_token(),
-            "agency_client_id": str(client.client_id),
         }
+
+        if client.username and ".deleted" not in client.username:
+            payload["agency_client_name"] = client.username
+        else:
+            payload["agency_client_id"] = str(client.client_id)
 
         data = self._post("/oauth2/token.json", payload)
         token = self._token_from_response(data)
@@ -219,17 +223,24 @@ class VkAdsApi:
 
     def _parse_agency_client(self, item: dict[str, Any]) -> AgencyClient | None:
         user = item.get("user") if isinstance(item.get("user"), dict) else item
+        user_status = str(user.get("status", ""))
+        username = str(self._first_existing(user, ["username", "login", "email"], ""))
+
+        if user_status and user_status != "active":
+            return None
+        if username.endswith(".deleted"):
+            return None
+
         client_id = self._first_existing(user, ["id", "user_id", "client_id"])
         if client_id is None:
             return None
 
-        username = str(self._first_existing(user, ["username", "login", "email"], ""))
         additional_info = user.get("additional_info") if isinstance(user.get("additional_info"), dict) else {}
         name = str(
             self._first_existing(
                 additional_info,
                 ["client_name", "name"],
-                self._first_existing(user, ["name"], username or f"Клиент {client_id}"),
+                self._first_existing(user, ["client_username", "name"], username or f"Клиент {client_id}"),
             )
         )
         account = user.get("account") if isinstance(user.get("account"), dict) else {}
@@ -240,7 +251,7 @@ class VkAdsApi:
             username=username,
             name=name,
             access_type=str(item.get("access_type", "")),
-            status=str(item.get("status", "")),
+            status=user_status or str(item.get("status", "")),
             balance=self._as_float(balance) if balance is not None else None,
         )
 
