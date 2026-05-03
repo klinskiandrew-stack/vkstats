@@ -28,6 +28,10 @@ class VkAdsApi:
         if self.access_token:
             return self.access_token
 
+        if self.settings.vk_ads_access_token:
+            self.access_token = self.settings.vk_ads_access_token
+            return self.access_token
+
         url = f"{self.settings.api_base_url}/oauth2/token.json"
         payload = {
             "grant_type": "client_credentials",
@@ -70,7 +74,10 @@ class VkAdsApi:
 
     def test_access(self) -> str:
         token = self.get_access_token()
-        auth_type = "agency_client_credentials" if self.settings.vk_ads_agency_client_name else "client_credentials"
+        if self.settings.vk_ads_access_token:
+            auth_type = "static_access_token"
+        else:
+            auth_type = "agency_client_credentials" if self.settings.vk_ads_agency_client_name else "client_credentials"
         return f"{token[:10]}... ({auth_type})"
 
     def get_agency_clients(self) -> list[dict[str, Any]]:
