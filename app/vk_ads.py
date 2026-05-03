@@ -30,11 +30,14 @@ class VkAdsApi:
 
         url = f"{self.settings.api_base_url}/oauth2/token.json"
         payload = {
-            "grant_type": "agency_client_credentials",
+            "grant_type": "client_credentials",
             "client_id": self.settings.vk_ads_client_id,
             "client_secret": self.settings.vk_ads_client_secret,
-            "agency_client_name": self.settings.vk_ads_agency_client_name,
         }
+
+        if self.settings.vk_ads_agency_client_name:
+            payload["grant_type"] = "agency_client_credentials"
+            payload["agency_client_name"] = self.settings.vk_ads_agency_client_name
 
         response = requests.post(url, data=payload, timeout=40)
         self._raise_for_status(response, "получить access_token")
@@ -67,7 +70,8 @@ class VkAdsApi:
 
     def test_access(self) -> str:
         token = self.get_access_token()
-        return token[:10] + "..."
+        auth_type = "agency_client_credentials" if self.settings.vk_ads_agency_client_name else "client_credentials"
+        return f"{token[:10]}... ({auth_type})"
 
     def get_agency_clients(self) -> list[dict[str, Any]]:
         data = self._get("/agency/clients.json")
