@@ -74,10 +74,17 @@ class VkAdsApi:
         return self._extract_list(data)
 
     def get_spend_by_client(self, client_id: int | str, report_date: date) -> ClientSpend:
-        """Получает расход по одному клиенту агентского кабинета за дату."""
+        return self.get_spend_by_client_period(client_id, report_date, report_date)
+
+    def get_spend_by_client_period(
+        self,
+        client_id: int | str,
+        date_from: date,
+        date_to: date,
+    ) -> ClientSpend:
         params = {
-            "date_from": report_date.isoformat(),
-            "date_to": report_date.isoformat(),
+            "date_from": date_from.isoformat(),
+            "date_to": date_to.isoformat(),
             "metrics": "base",
             "id": str(client_id),
         }
@@ -93,11 +100,11 @@ class VkAdsApi:
         goals = 0
 
         for row in rows:
-            stats = self._extract_stats(row)
-            spent += self._as_float(self._first_existing(stats, ["spent", "amount", "cost"], 0))
-            shows += int(self._as_float(self._first_existing(stats, ["shows"], 0)))
-            clicks += int(self._as_float(self._first_existing(stats, ["clicks"], 0)))
-            goals += int(self._as_float(self._first_existing(stats, ["goals"], 0)))
+            item_spent, item_shows, item_clicks, item_goals = self._collect_metrics(row)
+            spent += item_spent
+            shows += item_shows
+            clicks += item_clicks
+            goals += item_goals
 
         return ClientSpend(
             client_id=client_id,
@@ -109,44 +116,61 @@ class VkAdsApi:
         )
 
     def get_spend_by_clients(self, report_date: date) -> list[ClientSpend]:
+        return self.get_spend_by_clients_period(report_date, report_date)
+
+    def get_spend_by_clients_period(self, date_from: date, date_to: date) -> list[ClientSpend]:
         params = {
-            "date_from": report_date.isoformat(),
-            "date_to": report_date.isoformat(),
+            "date_from": date_from.isoformat(),
+            "date_to": date_to.isoformat(),
             "metrics": "base",
         }
         data = self._get("/statistics/users/day.json", params=params)
         rows = self._extract_list(data)
 
         clients = {str(item.get("id")): item for item in self.get_agency_clients_safe()}
-        result: list[ClientSpend] = []
+        grouped: dict[str, dict[str, Any]] = {}
 
         for row in rows:
             client_id = self._first_existing(row, ["id", "user_id", "client_id"])
-            stats = self._extract_stats(row)
-            spent = self._as_float(self._first_existing(stats, ["spent", "amount", "cost"], 0))
-
             if client_id is None:
                 client_id = row.get("id", "unknown")
 
-            client_info = clients.get(str(client_id), {})
-            client_name = str(
-                self._first_existing(
-                    client_info,
-                    ["name", "username", "login", "client_username", "email"],
-                    f"Клиент {client_id}",
+            client_id_str = str(client_id)
+            if client_id_str not in grouped:
+                client_info = clients.get(client_id_str, {})
+                client_name = str(
+                    self._first_existing(
+                        client_info,
+                        ["name", "username", "login", "client_username", "email"],
+                        f"Клиент {client_id}",
+                    )
                 )
-            )
+                grouped[client_id_str] = {
+                    "client_id": client_id,
+                    "client_name": client_name,
+                    "spent": 0.0,
+                    "shows": 0,
+                    "clicks": 0,
+                    "goals": 0,
+                }
 
-            result.append(
-                ClientSpend(
-                    client_id=client_id,
-                    client_name=client_name,
-                    spent=spent,
-                    shows=int(self._as_float(self._first_existing(stats, ["shows"], 0))),
-                    clicks=int(self._as_float(self._first_existing(stats, ["clicks"], 0))),
-                    goals=int(self._as_float(self._first_existing(stats, ["goals"], 0))),
-                )
+            item_spent, item_shows, item_clicks, item_goals = self._collect_metrics(row)
+            grouped[client_id_str]["spent"] += item_spent
+            grouped[client_id_str]["shows"] += item_shows
+            grouped[client_id_str]["clicks"] += item_clicks
+            grouped[client_id_str]["goals"] += item_goals
+
+        result = [
+            ClientSpend(
+                client_id=item["client_id"],
+                client_name=item["client_name"],
+                spent=item["spent"],
+                shows=item["shows"],
+                clicks=item["clicks"],
+                goals=item["goals"],
             )
+            for item in grouped.values()
+        ]
 
         return sorted(result, key=lambda item: item.spent, reverse=True)
 
@@ -187,6 +211,27 @@ class VkAdsApi:
                 return first
 
         return row
+
+    def _collect_metrics(self, row: dict[str, Any]) -> tuple[float, int, int, int]:
+        stats = self._extract_stats(row)
+
+        spent = self._as_float(self._first_existing(stats, ["spent", "amount", "cost"], 0))
+        shows = int(self._as_float(self._first_existing(stats, ["shows", "impressions"], 0)))
+        clicks = int(self._as_float(self._first_existing(stats, ["clicks"], 0)))
+        goals = int(self._as_float(self._first_existing(stats, ["goals", "conversions"], 0)))
+
+        nested_rows = row.get("rows")
+        if isinstance(nested_rows, list):
+            for nested in nested_rows:
+                if not isinstance(nested, dict):
+                    continue
+                nested_stats = self._extract_stats(nested)
+                spent += self._as_float(self._first_existing(nested_stats, ["spent", "amount", "cost"], 0))
+                shows += int(self._as_float(self._first_existing(nested_stats, ["shows", "impressions"], 0)))
+                clicks += int(self._as_float(self._first_existing(nested_stats, ["clicks"], 0)))
+                goals += int(self._as_float(self._first_existing(nested_stats, ["goals", "conversions"], 0)))
+
+        return spent, shows, clicks, goals
 
     @staticmethod
     def _first_existing(source: dict[str, Any], keys: list[str], default: Any = None) -> Any:
