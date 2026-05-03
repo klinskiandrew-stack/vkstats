@@ -126,11 +126,8 @@ class VkAdsApi:
             "client_id": self.settings.vk_ads_client_id,
             "client_secret": self.settings.vk_ads_client_secret,
             "access_token": self.get_agency_access_token(),
+            "agency_client_id": str(client.client_id),
         }
-        if client.username:
-            payload["agency_client_name"] = client.username
-        else:
-            payload["agency_client_id"] = str(client.client_id)
 
         data = self._post("/oauth2/token.json", payload)
         token = self._token_from_response(data)
