@@ -42,6 +42,15 @@ def total_spent(rows) -> float:
     return sum(row.spent for row in rows)
 
 
+def send_message(settings, text: str) -> None:
+    send_telegram_message(
+        settings.telegram_bot_token,
+        settings.telegram_chat_id,
+        text,
+        settings.telegram_proxy_url,
+    )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="VKDailyStat")
     parser.add_argument(
@@ -99,7 +108,7 @@ def main() -> None:
             period_name="день",
             currency_symbol=settings.currency_symbol,
         )
-        send_telegram_message(settings.telegram_bot_token, settings.telegram_chat_id, text)
+        send_message(settings, text)
         print("Дневной отчет отправлен в Telegram.")
         return
 
@@ -150,7 +159,7 @@ def main() -> None:
                 )
             )
 
-        send_telegram_message(settings.telegram_bot_token, settings.telegram_chat_id, "\n\n——————————\n\n".join(messages))
+        send_message(settings, "\n\n——————————\n\n".join(messages))
         print("Автоотчет отправлен в Telegram.")
         return
 
