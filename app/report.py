@@ -10,30 +10,61 @@ def money(value: float, symbol: str = "₽") -> str:
     return f"{rounded:,.0f}".replace(",", " ") + f" {symbol}"
 
 
-def build_daily_report(rows: list[ClientSpend], report_date: date, currency_symbol: str = "₽") -> str:
+def percent_change(current: float, previous: float) -> str:
+    if previous == 0 and current == 0:
+        return "без изменений"
+    if previous == 0:
+        return "рост с 0"
+
+    change = ((current - previous) / previous) * 100
+    sign = "+" if change > 0 else ""
+    return f"{sign}{change:.1f}%"
+
+
+def period_title(period_name: str, date_from: date, date_to: date) -> str:
+    if date_from == date_to:
+        return f"{period_name} за {date_from.strftime('%d.%m.%Y')}"
+    return f"{period_name} за {date_from.strftime('%d.%m.%Y')}–{date_to.strftime('%d.%m.%Y')}"
+
+
+def build_report(
+    rows: list[ClientSpend],
+    date_from: date,
+    date_to: date,
+    period_name: str,
+    currency_symbol: str = "₽",
+    previous_total: float | None = None,
+    previous_label: str | None = None,
+) -> str:
     active_rows = [row for row in rows if row.spent > 0]
     zero_rows = [row for row in rows if row.spent <= 0]
     total_spent = sum(row.spent for row in rows)
 
     lines: list[str] = []
-    lines.append(f"📊 VK Ads — открут за {report_date.strftime('%d.%m.%Y')}")
+    lines.append(f"📊 VKDailyStat — {period_title(period_name, date_from, date_to)}")
     lines.append("")
     lines.append("Итого по агентскому кабинету:")
     lines.append(f"Расход: {money(total_spent, currency_symbol)}")
-    lines.append(f"Активных проектов: {len(active_rows)}")
-    lines.append(f"Проектов без открута: {len(zero_rows)}")
+
+    if previous_total is not None:
+        label = previous_label or "предыдущий период"
+        lines.append(f"Изменение к периоду «{label}»: {percent_change(total_spent, previous_total)}")
+        lines.append(f"Предыдущий период: {money(previous_total, currency_symbol)}")
+
+    lines.append(f"Активных клиентов: {len(active_rows)}")
+    lines.append(f"Клиентов без открута: {len(zero_rows)}")
 
     if active_rows:
         lines.append("")
-        lines.append("По проектам:")
-        for row in active_rows:
+        lines.append("Клиенты по откруту:")
+        for index, row in enumerate(active_rows, start=1):
             metrics = []
             if row.clicks:
                 metrics.append(f"клики: {row.clicks}")
             if row.shows:
                 metrics.append(f"показы: {row.shows}")
             metrics_text = f" ({', '.join(metrics)})" if metrics else ""
-            lines.append(f"— {row.client_name} — {money(row.spent, currency_symbol)}{metrics_text}")
+            lines.append(f"{index}. {row.client_name} — {money(row.spent, currency_symbol)}{metrics_text}")
 
     if zero_rows:
         lines.append("")
@@ -44,3 +75,13 @@ def build_daily_report(rows: list[ClientSpend], report_date: date, currency_symb
             lines.append(f"…и ещё {len(zero_rows) - 30}")
 
     return "\n".join(lines)
+
+
+def build_daily_report(rows: list[ClientSpend], report_date: date, currency_symbol: str = "₽") -> str:
+    return build_report(
+        rows=rows,
+        date_from=report_date,
+        date_to=report_date,
+        period_name="день",
+        currency_symbol=currency_symbol,
+    )
