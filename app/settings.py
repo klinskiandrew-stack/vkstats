@@ -34,8 +34,6 @@ def get_settings() -> Settings:
         missing.append("VK_ADS_CLIENT_ID")
     if not settings.vk_ads_client_secret:
         missing.append("VK_ADS_CLIENT_SECRET")
-    if not settings.vk_ads_agency_client_name:
-        missing.append("VK_ADS_AGENCY_CLIENT_NAME")
     if not settings.telegram_bot_token:
         missing.append("TELEGRAM_BOT_TOKEN")
     if not settings.telegram_chat_id:
