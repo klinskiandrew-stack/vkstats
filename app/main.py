@@ -1,31 +1,52 @@
 from __future__ import annotations
 
 import argparse
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from app.report import build_daily_report, money
+from app.report import build_report, money
 from app.settings import get_settings
 from app.telegram_sender import send_telegram_message
 from app.vk_ads import VkAdsApi
 
 
-def yesterday(timezone: str):
+def yesterday(timezone: str) -> date:
     now = datetime.now(ZoneInfo(timezone))
     return (now - timedelta(days=1)).date()
 
 
-def parse_report_date(date_value: str | None, timezone: str):
+def parse_report_date(date_value: str | None, timezone: str) -> date:
     if date_value:
         return datetime.strptime(date_value, "%Y-%m-%d").date()
     return yesterday(timezone)
 
 
+def week_range_for_report(today: date) -> tuple[date, date, date, date]:
+    current_end = today - timedelta(days=1)
+    current_start = current_end - timedelta(days=6)
+    previous_end = current_start - timedelta(days=1)
+    previous_start = previous_end - timedelta(days=6)
+    return current_start, current_end, previous_start, previous_end
+
+
+def month_range_for_report(today: date) -> tuple[date, date, date, date]:
+    first_day_this_month = today.replace(day=1)
+    current_end = first_day_this_month - timedelta(days=1)
+    current_start = current_end.replace(day=1)
+    previous_end = current_start - timedelta(days=1)
+    previous_start = previous_end.replace(day=1)
+    return current_start, current_end, previous_start, previous_end
+
+
+def total_spent(rows) -> float:
+    return sum(row.spent for row in rows)
+
+
 def main() -> None:
-    parser = argparse.ArgumentParser(description="VK Ads daily budget report")
+    parser = argparse.ArgumentParser(description="VKDailyStat")
     parser.add_argument(
         "command",
-        choices=["check-token", "list-clients", "client-spend", "send-report"],
+        choices=["check-token", "list-clients", "client-spend", "send-report", "send-auto-report"],
         help="Что сделать: проверить токен, вывести клиентов, проверить клиента или отправить отчет",
     )
     parser.add_argument(
@@ -70,10 +91,67 @@ def main() -> None:
 
     if args.command == "send-report":
         report_date = parse_report_date(args.date, settings.timezone)
-        rows = api.get_spend_by_clients(report_date)
-        text = build_daily_report(rows, report_date, settings.currency_symbol)
+        rows = api.get_spend_by_clients_period(report_date, report_date)
+        text = build_report(
+            rows=rows,
+            date_from=report_date,
+            date_to=report_date,
+            period_name="день",
+            currency_symbol=settings.currency_symbol,
+        )
         send_telegram_message(settings.telegram_bot_token, settings.telegram_chat_id, text)
-        print("Отчет отправлен в Telegram.")
+        print("Дневной отчет отправлен в Telegram.")
+        return
+
+    if args.command == "send-auto-report":
+        now = datetime.now(ZoneInfo(settings.timezone)).date()
+
+        report_date = parse_report_date(args.date, settings.timezone)
+        day_rows = api.get_spend_by_clients_period(report_date, report_date)
+        messages = [
+            build_report(
+                rows=day_rows,
+                date_from=report_date,
+                date_to=report_date,
+                period_name="день",
+                currency_symbol=settings.currency_symbol,
+            )
+        ]
+
+        if now.weekday() == 0:
+            current_start, current_end, previous_start, previous_end = week_range_for_report(now)
+            current_rows = api.get_spend_by_clients_period(current_start, current_end)
+            previous_rows = api.get_spend_by_clients_period(previous_start, previous_end)
+            messages.append(
+                build_report(
+                    rows=current_rows,
+                    date_from=current_start,
+                    date_to=current_end,
+                    period_name="неделя",
+                    currency_symbol=settings.currency_symbol,
+                    previous_total=total_spent(previous_rows),
+                    previous_label=f"{previous_start.strftime('%d.%m.%Y')}–{previous_end.strftime('%d.%m.%Y')}",
+                )
+            )
+
+        if now.day == 1:
+            current_start, current_end, previous_start, previous_end = month_range_for_report(now)
+            current_rows = api.get_spend_by_clients_period(current_start, current_end)
+            previous_rows = api.get_spend_by_clients_period(previous_start, previous_end)
+            messages.append(
+                build_report(
+                    rows=current_rows,
+                    date_from=current_start,
+                    date_to=current_end,
+                    period_name="месяц",
+                    currency_symbol=settings.currency_symbol,
+                    previous_total=total_spent(previous_rows),
+                    previous_label=f"{previous_start.strftime('%d.%m.%Y')}–{previous_end.strftime('%d.%m.%Y')}",
+                )
+            )
+
+        send_telegram_message(settings.telegram_bot_token, settings.telegram_chat_id, "\n\n——————————\n\n".join(messages))
+        print("Автоотчет отправлен в Telegram.")
         return
 
 
