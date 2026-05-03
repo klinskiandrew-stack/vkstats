@@ -37,8 +37,7 @@ def build_report(
     previous_label: str | None = None,
 ) -> str:
     active_rows = [row for row in rows if row.spent > 0]
-    zero_rows = [row for row in rows if row.spent <= 0]
-    total_spent = sum(row.spent for row in rows)
+    total_spent = sum(row.spent for row in active_rows)
 
     lines: list[str] = []
     lines.append(f"📊 VKDailyStat — {period_title(period_name, date_from, date_to)}")
@@ -51,8 +50,7 @@ def build_report(
         lines.append(f"Изменение к периоду «{label}»: {percent_change(total_spent, previous_total)}")
         lines.append(f"Предыдущий период: {money(previous_total, currency_symbol)}")
 
-    lines.append(f"Активных клиентов: {len(active_rows)}")
-    lines.append(f"Клиентов без открута: {len(zero_rows)}")
+    lines.append(f"Клиентов с открутом: {len(active_rows)}")
 
     if active_rows:
         lines.append("")
@@ -65,14 +63,9 @@ def build_report(
                 metrics.append(f"показы: {row.shows}")
             metrics_text = f" ({', '.join(metrics)})" if metrics else ""
             lines.append(f"{index}. {row.client_name} — {money(row.spent, currency_symbol)}{metrics_text}")
-
-    if zero_rows:
+    else:
         lines.append("")
-        lines.append("Без открута:")
-        for row in zero_rows[:30]:
-            lines.append(f"— {row.client_name}")
-        if len(zero_rows) > 30:
-            lines.append(f"…и ещё {len(zero_rows) - 30}")
+        lines.append("Клиентов с открутом за период нет.")
 
     return "\n".join(lines)
 
