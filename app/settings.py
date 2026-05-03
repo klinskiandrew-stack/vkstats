@@ -7,6 +7,7 @@ load_dotenv()
 
 @dataclass(frozen=True)
 class Settings:
+    vk_ads_access_token: str
     vk_ads_client_id: str
     vk_ads_client_secret: str
     vk_ads_agency_client_name: str
@@ -20,6 +21,7 @@ class Settings:
 
 def get_settings() -> Settings:
     settings = Settings(
+        vk_ads_access_token=os.getenv("VK_ADS_ACCESS_TOKEN", "").strip(),
         vk_ads_client_id=os.getenv("VK_ADS_CLIENT_ID", "").strip(),
         vk_ads_client_secret=os.getenv("VK_ADS_CLIENT_SECRET", "").strip(),
         vk_ads_agency_client_name=os.getenv("VK_ADS_AGENCY_CLIENT_NAME", "").strip(),
@@ -32,10 +34,12 @@ def get_settings() -> Settings:
     )
 
     missing = []
-    if not settings.vk_ads_client_id:
-        missing.append("VK_ADS_CLIENT_ID")
-    if not settings.vk_ads_client_secret:
-        missing.append("VK_ADS_CLIENT_SECRET")
+    if not settings.vk_ads_access_token:
+        if not settings.vk_ads_client_id:
+            missing.append("VK_ADS_CLIENT_ID")
+        if not settings.vk_ads_client_secret:
+            missing.append("VK_ADS_CLIENT_SECRET")
+
     if not settings.telegram_bot_token:
         missing.append("TELEGRAM_BOT_TOKEN")
     if not settings.telegram_chat_id:
