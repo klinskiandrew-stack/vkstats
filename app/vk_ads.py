@@ -167,17 +167,23 @@ class VkAdsApi:
         return clients
 
     def get_spend_by_client_period(self, client: AgencyClient, date_from: date, date_to: date) -> ClientSpend:
-        access_token = self.get_client_access_token(client)
-        data = self._get(
-            "/statistics/users/day.json",
-            access_token,
-            params={
-                "date_from": date_from.isoformat(),
-                "date_to": date_to.isoformat(),
-                "metrics": "base",
-                "id": str(client.client_id),
-            },
-        )
+        params = {
+            "date_from": date_from.isoformat(),
+            "date_to": date_to.isoformat(),
+            "metrics": "base",
+            "id": str(client.client_id),
+        }
+
+        try:
+            access_token = self.get_client_access_token(client)
+            data = self._get("/statistics/users/day.json", access_token, params=params)
+        except Exception as client_token_error:
+            try:
+                agency_access_token = self.get_agency_access_token()
+                data = self._get("/statistics/users/day.json", agency_access_token, params=params)
+            except Exception:
+                raise client_token_error
+
         spent, shows, clicks, goals = self._collect_metrics_from_response(data)
         return ClientSpend(
             client_id=client.client_id,
