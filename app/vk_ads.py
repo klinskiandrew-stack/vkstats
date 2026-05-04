@@ -175,14 +175,14 @@ class VkAdsApi:
         }
 
         try:
-            access_token = self.get_client_access_token(client)
-            data = self._get("/statistics/users/day.json", access_token, params=params)
-        except Exception as client_token_error:
+            agency_access_token = self.get_agency_access_token()
+            data = self._get("/statistics/users/day.json", agency_access_token, params=params)
+        except Exception as agency_error:
             try:
-                agency_access_token = self.get_agency_access_token()
-                data = self._get("/statistics/users/day.json", agency_access_token, params=params)
+                client_access_token = self.get_client_access_token(client)
+                data = self._get("/statistics/users/day.json", client_access_token, params=params)
             except Exception:
-                raise client_token_error
+                raise agency_error
 
         spent, shows, clicks, goals = self._collect_metrics_from_response(data)
         return ClientSpend(
