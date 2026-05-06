@@ -16,10 +16,40 @@ class Settings:
     telegram_bot_token: str
     telegram_chat_id: str
     telegram_proxy_url: str
+    telegram_admin_ids: set[int]
     timezone: str = "Europe/Moscow"
     api_base_url: str = "https://ads.vk.com/api/v2"
     currency_symbol: str = "₽"
     token_store_path: str = "tokens.json"
+    enable_ai_summary: bool = False
+    ai_api_key: str = ""
+    ai_base_url: str = ""
+    ai_model: str = ""
+    ai_timeout_seconds: int = 30
+
+
+def _parse_admin_ids(value: str) -> set[int]:
+    result: set[int] = set()
+    for item in value.replace(";", ",").split(","):
+        item = item.strip()
+        if not item:
+            continue
+        try:
+            result.add(int(item))
+        except ValueError:
+            continue
+    return result
+
+
+def _parse_bool(value: str) -> bool:
+    return value.strip().lower() in {"1", "true", "yes", "on", "да"}
+
+
+def _parse_int(value: str, default: int) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
 
 
 def get_settings() -> Settings:
@@ -33,10 +63,16 @@ def get_settings() -> Settings:
         telegram_bot_token=os.getenv("TELEGRAM_BOT_TOKEN", "").strip(),
         telegram_chat_id=os.getenv("TELEGRAM_CHAT_ID", "").strip(),
         telegram_proxy_url=os.getenv("TELEGRAM_PROXY_URL", "").strip(),
+        telegram_admin_ids=_parse_admin_ids(os.getenv("TELEGRAM_ADMIN_IDS", "5245218509")),
         timezone=os.getenv("TIMEZONE", "Europe/Moscow").strip(),
         api_base_url=os.getenv("VK_ADS_API_BASE_URL", "https://ads.vk.com/api/v2").strip().rstrip("/"),
         currency_symbol=os.getenv("CURRENCY_SYMBOL", "₽").strip(),
         token_store_path=os.getenv("TOKEN_STORE_PATH", "tokens.json").strip(),
+        enable_ai_summary=_parse_bool(os.getenv("ENABLE_AI_SUMMARY", "false")),
+        ai_api_key=os.getenv("AI_API_KEY", "").strip(),
+        ai_base_url=os.getenv("AI_BASE_URL", "").strip().rstrip("/"),
+        ai_model=os.getenv("AI_MODEL", "").strip(),
+        ai_timeout_seconds=_parse_int(os.getenv("AI_TIMEOUT_SECONDS", "30"), 30),
     )
 
     missing = []
@@ -50,6 +86,13 @@ def get_settings() -> Settings:
         missing.append("TELEGRAM_BOT_TOKEN")
     if not settings.telegram_chat_id:
         missing.append("TELEGRAM_CHAT_ID")
+    if settings.enable_ai_summary:
+        if not settings.ai_api_key:
+            missing.append("AI_API_KEY")
+        if not settings.ai_base_url:
+            missing.append("AI_BASE_URL")
+        if not settings.ai_model:
+            missing.append("AI_MODEL")
 
     if missing:
         raise RuntimeError("Не заполнены переменные окружения: " + ", ".join(missing))
