@@ -4,9 +4,11 @@ import argparse
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
+from app.ai_summary import build_ai_summary
+from app.extended_report import build_extended_report, collect_extended_report_data
 from app.report import build_report, money
 from app.settings import get_settings
-from app.telegram_sender import send_telegram_message
+from app.telegram_sender import send_long_telegram_message, send_telegram_message
 from app.vk_ads import VkAdsApi
 
 
@@ -55,7 +57,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="VKDailyStat")
     parser.add_argument(
         "command",
-        choices=["check-token", "list-clients", "client-spend", "send-report", "send-auto-report"],
+        choices=["check-token", "list-clients", "client-spend", "send-report", "send-auto-report", "send-extended-report", "print-extended-report"],
         help="Что сделать: проверить токен, вывести клиентов, проверить клиента или отправить отчет",
     )
     parser.add_argument("--date", help="Дата отчета в формате YYYY-MM-DD. По умолчанию — вчера по TIMEZONE.")
@@ -99,6 +101,27 @@ def main() -> None:
         text = build_report(rows, report_date, report_date, "день", settings.currency_symbol)
         send_message(settings, text)
         print("Дневной отчет отправлен в Telegram.")
+        return
+
+    if args.command in {"send-extended-report", "print-extended-report"}:
+        report_date = parse_report_date(args.date, settings.timezone)
+        data = collect_extended_report_data(api, report_date)
+        ai_summary = ""
+        try:
+            ai_summary = build_ai_summary(settings, data)
+        except Exception as exc:
+            ai_summary = f"ИИ-сводка временно не сформирована: {exc}"
+        text = build_extended_report(data, settings.currency_symbol, ai_summary=ai_summary)
+        if args.command == "print-extended-report":
+            print(text)
+        else:
+            send_long_telegram_message(
+                settings.telegram_bot_token,
+                settings.telegram_chat_id,
+                text,
+                settings.telegram_proxy_url,
+            )
+            print("Расширенный отчет отправлен в Telegram.")
         return
 
     if args.command == "send-auto-report":
