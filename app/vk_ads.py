@@ -31,6 +31,23 @@ class ClientSpend:
     balance: float | None = None
 
 
+@dataclass(frozen=True)
+class AdPlan:
+    id: int | str
+    name: str
+    status: str = ""
+    budget_limit_day: float = 0.0
+
+
+@dataclass(frozen=True)
+class AdPlanSpend:
+    id: int | str
+    spent: float
+    shows: int = 0
+    clicks: int = 0
+    goals: int = 0
+
+
 class VkAdsApi:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
@@ -216,6 +233,95 @@ class VkAdsApi:
             if str(client.client_id) == str(client_id):
                 return self.get_spend_by_client_period(client, report_date, report_date)
         raise RuntimeError(f"Клиент {client_id} не найден в агентском кабинете")
+
+    def get_ad_plans(self, client: AgencyClient) -> list[AdPlan]:
+        return self._with_client_first(client, self._get_ad_plans_with_token)
+
+    def _get_ad_plans_with_token(self, access_token: str) -> list[AdPlan]:
+        plans: list[AdPlan] = []
+        offset = 0
+        limit = 50
+        while True:
+            data = self._get(
+                "/ad_plans.json",
+                access_token,
+                params={
+                    "limit": limit,
+                    "offset": offset,
+                    "_status": "active",
+                    "fields": "id,name,status,budget_limit_day,budget_limit",
+                },
+            )
+            items = self._extract_list(data)
+            for item in items:
+                plan_id = self._first_existing(item, ["id", "ad_plan_id"])
+                if plan_id is None:
+                    continue
+                plans.append(
+                    AdPlan(
+                        id=plan_id,
+                        name=str(self._first_existing(item, ["name"], f"Кампания {plan_id}")),
+                        status=str(self._first_existing(item, ["status"], "")),
+                        budget_limit_day=self._as_float(self._first_existing(item, ["budget_limit_day"], 0)),
+                    )
+                )
+            count = int(data.get("count", len(items)) if isinstance(data, dict) else len(items))
+            offset += limit
+            if not items or offset >= count:
+                break
+        return plans
+
+    def get_ad_plan_spends(self, client: AgencyClient, plan_ids: list[int | str], report_date: date) -> dict[str, AdPlanSpend]:
+        if not plan_ids:
+            return {}
+        return self._with_client_first(client, lambda token: self._get_ad_plan_spends_with_token(token, plan_ids, report_date))
+
+    def _get_ad_plan_spends_with_token(
+        self,
+        access_token: str,
+        plan_ids: list[int | str],
+        report_date: date,
+    ) -> dict[str, AdPlanSpend]:
+        result: dict[str, AdPlanSpend] = {}
+        chunk_size = 200
+        for start in range(0, len(plan_ids), chunk_size):
+            chunk = plan_ids[start : start + chunk_size]
+            data = self._get(
+                "/statistics/ad_plans/day.json",
+                access_token,
+                params={
+                    "date_from": report_date.isoformat(),
+                    "date_to": report_date.isoformat(),
+                    "metrics": "base",
+                    "id": ",".join(str(item) for item in chunk),
+                },
+            )
+            for item in self._extract_list(data):
+                item_id = self._first_existing(item, ["id"])
+                if item_id is None:
+                    continue
+                spent, shows, clicks, goals = self._collect_metrics_from_response({"total": item.get("total", item)})
+                result[str(item_id)] = AdPlanSpend(
+                    id=item_id,
+                    spent=spent,
+                    shows=shows,
+                    clicks=clicks,
+                    goals=goals,
+                )
+        return result
+
+    def _with_client_first(self, client: AgencyClient, action):
+        client_error: Exception | None = None
+        try:
+            return action(self.get_client_access_token(client))
+        except Exception as exc:
+            client_error = exc
+        try:
+            return action(self.get_agency_access_token())
+        except Exception:
+            if client_error:
+                raise client_error
+            raise
 
     def _token_from_response(self, data: dict[str, Any]) -> StoredToken:
         access_token = data.get("access_token")
