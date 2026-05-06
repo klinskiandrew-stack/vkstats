@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass
 from datetime import date
 from typing import Any
@@ -53,19 +54,40 @@ class VkAdsApi:
         self.settings = settings
         self.store = TokenStore(settings.token_store_path, settings.timezone)
         self._agency_token: str | None = None
+        self._last_request_at = 0.0
 
     def _headers(self, access_token: str) -> dict[str, str]:
         return {"Authorization": f"Bearer {access_token}"}
 
+    def _wait_rate_limit(self) -> None:
+        min_interval = 0.65
+        now = time.monotonic()
+        diff = now - self._last_request_at
+        if diff < min_interval:
+            time.sleep(min_interval - diff)
+        self._last_request_at = time.monotonic()
+
     def _get(self, path: str, access_token: str, params: dict[str, Any] | None = None) -> Any:
         url = f"{self.settings.api_base_url}{path}"
-        response = requests.get(url, headers=self._headers(access_token), params=params, timeout=60)
+        for attempt in range(4):
+            self._wait_rate_limit()
+            response = requests.get(url, headers=self._headers(access_token), params=params, timeout=60)
+            if response.status_code != 429:
+                self._raise_for_status(response, f"выполнить GET {path}")
+                return response.json()
+            time.sleep(1.5 + attempt)
         self._raise_for_status(response, f"выполнить GET {path}")
         return response.json()
 
     def _post(self, path: str, payload: dict[str, Any]) -> Any:
         url = f"{self.settings.api_base_url}{path}"
-        response = requests.post(url, data=payload, timeout=60)
+        for attempt in range(4):
+            self._wait_rate_limit()
+            response = requests.post(url, data=payload, timeout=60)
+            if response.status_code != 429:
+                self._raise_for_status(response, f"выполнить POST {path}")
+                return response.json()
+            time.sleep(1.5 + attempt)
         self._raise_for_status(response, f"выполнить POST {path}")
         return response.json()
 
