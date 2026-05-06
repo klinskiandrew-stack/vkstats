@@ -184,49 +184,69 @@ class VkAdsApi:
         return clients
 
     def get_spend_by_client_period(self, client: AgencyClient, date_from: date, date_to: date) -> ClientSpend:
-        params = {
-            "date_from": date_from.isoformat(),
-            "date_to": date_to.isoformat(),
-            "metrics": "base",
-            "id": str(client.client_id),
-        }
-
-        try:
-            agency_access_token = self.get_agency_access_token()
-            data = self._get("/statistics/users/day.json", agency_access_token, params=params)
-        except Exception as agency_error:
-            try:
-                client_access_token = self.get_client_access_token(client)
-                data = self._get("/statistics/users/day.json", client_access_token, params=params)
-            except Exception:
-                raise agency_error
-
-        spent, shows, clicks, goals = self._collect_metrics_from_response(data)
+        rows = self.get_spend_by_clients_period(date_from, date_to, clients=[client])
+        if rows:
+            return rows[0]
         return ClientSpend(
             client_id=client.client_id,
             client_name=client.name or client.username or f"Клиент {client.client_id}",
-            spent=spent,
-            shows=shows,
-            clicks=clicks,
-            goals=goals,
+            spent=0,
             balance=client.balance,
         )
 
-    def get_spend_by_clients_period(self, date_from: date, date_to: date) -> list[ClientSpend]:
-        clients = self.get_agency_clients()
-        result: list[ClientSpend] = []
-        errors: list[str] = []
+    def get_spend_by_clients_period(
+        self,
+        date_from: date,
+        date_to: date,
+        clients: list[AgencyClient] | None = None,
+    ) -> list[ClientSpend]:
+        clients = clients or self.get_agency_clients()
+        clients_by_id = {str(client.client_id): client for client in clients}
+        result: dict[str, ClientSpend] = {}
+
+        ids = list(clients_by_id.keys())
+        access_token = self.get_agency_access_token()
+        chunk_size = 200
+
+        for start in range(0, len(ids), chunk_size):
+            chunk = ids[start : start + chunk_size]
+            params = {
+                "date_from": date_from.isoformat(),
+                "date_to": date_to.isoformat(),
+                "metrics": "base",
+                "id": ",".join(chunk),
+            }
+            data = self._get("/statistics/users/day.json", access_token, params=params)
+            for item in self._extract_list(data):
+                item_id = self._first_existing(item, ["id"])
+                if item_id is None:
+                    continue
+                client = clients_by_id.get(str(item_id))
+                if not client:
+                    continue
+                spent, shows, clicks, goals = self._collect_metrics_from_response({"total": item.get("total", item)})
+                result[str(item_id)] = ClientSpend(
+                    client_id=client.client_id,
+                    client_name=client.name or client.username or f"Клиент {client.client_id}",
+                    spent=spent,
+                    shows=shows,
+                    clicks=clicks,
+                    goals=goals,
+                    balance=client.balance,
+                )
 
         for client in clients:
-            try:
-                result.append(self.get_spend_by_client_period(client, date_from, date_to))
-            except Exception as exc:
-                errors.append(f"{client.name or client.username or client.client_id}: {exc}")
+            result.setdefault(
+                str(client.client_id),
+                ClientSpend(
+                    client_id=client.client_id,
+                    client_name=client.name or client.username or f"Клиент {client.client_id}",
+                    spent=0,
+                    balance=client.balance,
+                ),
+            )
 
-        if errors and not result:
-            raise RuntimeError("Не удалось получить статистику клиентов: " + " | ".join(errors[:5]))
-
-        return sorted(result, key=lambda item: item.spent, reverse=True)
+        return sorted(result.values(), key=lambda item: item.spent, reverse=True)
 
     def get_spend_by_client(self, client_id: int | str, report_date: date) -> ClientSpend:
         for client in self.get_agency_clients():
